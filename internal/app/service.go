@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"context"
@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"nloj-go/internal/judge"
 )
 
 type account struct {
@@ -28,12 +30,7 @@ type account struct {
 	hash    []byte
 }
 
-type testCase struct {
-	ID     int    `json:"id"`
-	Input  string `json:"input"`
-	Output string `json:"output"`
-	Sample bool   `json:"sample,omitempty"`
-}
+type testCase = judge.TestCase
 
 type problem struct {
 	ID          int        `json:"id"`
@@ -50,12 +47,8 @@ type problem struct {
 	Extra       string     `json:"-"`
 }
 
-type result struct {
-	Status string  `json:"status"`
-	Time   *int    `json:"timeUsed"`
-	Memory *int    `json:"memoryUsed"`
-	Info   *string `json:"judgeInfo"`
-}
+type result = judge.Result
+type caseRun = judge.CaseRun
 
 type submission struct {
 	ID       int    `json:"id"`
@@ -386,7 +379,7 @@ func (s *service) dispatch(r *http.Request, resource string, detail bool, id, n,
 			return 40100, nil
 		}
 		if r.Method == "POST" {
-			if _, ok := languages[sub.Language]; !ok {
+			if !judge.SupportsLanguage(sub.Language) {
 				return 40000, nil
 			}
 			if strings.TrimSpace(sub.Code) == "" || sub.Problem < 1 || sub.Problem > len(s.problems) || s.problems[sub.Problem-1].Visible != 1 {
@@ -397,7 +390,7 @@ func (s *service) dispatch(r *http.Request, resource string, detail bool, id, n,
 				return 40000, nil
 			}
 			if p.Type == "COMMUNICATION" {
-				if _, _, ok := splitCommunication(sub.Code); !ok {
+				if _, _, ok := judge.SplitCommunication(sub.Code); !ok {
 					return 40000, nil
 				}
 			}
@@ -453,7 +446,7 @@ func (s *service) work(ctx context.Context, run runner) {
 				runs, status := run(ctx, j.submission, j.problem)
 				switch status {
 				case "OK":
-					res = caseVerdict(j.problem.Cases, runs, j.problem.Type == "STANDARD" && j.problem.Mode == "EXACT")
+					res = judge.Verdict(j.problem.Cases, runs, j.problem.Type == "STANDARD" && j.problem.Mode == "EXACT")
 				case "CE":
 					res.Status = "CE"
 				}
@@ -487,7 +480,7 @@ func (s *service) handler() http.Handler {
 	return mux
 }
 
-func main() {
+func Run() {
 	if len(os.Args) == 2 && os.Args[1] == "worker" {
 		token := os.Getenv("NLOJ_WORKER_TOKEN")
 		if len(token) < 32 {

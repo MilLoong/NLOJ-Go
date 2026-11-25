@@ -6,10 +6,10 @@ NLOJ 的 Go 版本。在线判题后端：用户鉴权、题目管理、提交�
 
 | 模块 | 职责 |
 |------|------|
-| API | HTTP 入口、注册 / 登录、题目管理、提交与查询 |
-| 存储 | 追加日志、题目快照、提交与判定结果持久化 |
-| 调度 | 有界队列、重启后恢复未完成的提交 |
-| 判题 | 容器隔离、输出比对、SPJ、交互与通信；可独立运行 Worker |
+| `cmd/nloj` | API 与独立 Worker 的启动入口 |
+| `internal/app` | 用户、题目、提交 API，追加日志、队列和 Worker 通信 |
+| `internal/judge` | 容器隔离、输出比对、SPJ、交互与通信 |
+| `cmd/fifo` | Linux 容器内的 FIFO 协调程序 |
 
 ## 依赖
 
@@ -33,7 +33,7 @@ go test ./...
 ```powershell
 $env:NLOJ_ADMIN_PASSWORD = 'replace-with-local-admin-password'
 $env:NLOJ_JUDGE_IMAGE = 'nloj-judge:local'
-go run .
+go run ./cmd/nloj
 ```
 
 服务监听 `127.0.0.1:8080`，接口前缀为 `/api/v1`。不配置管理员密码时不创建管理员；不配置判题镜像或独立 Worker 时，提交保留为 `PENDING`。
@@ -42,8 +42,8 @@ go run .
 
 API 和 Worker 使用相同的随机 `NLOJ_WORKER_TOKEN`（至少 32 字节）。
 
-- Worker：设置 `NLOJ_JUDGE_IMAGE` 后执行 `go run . worker`，监听 `127.0.0.1:8081`
-- API：设置 `NLOJ_WORKER_URL=http://127.0.0.1:8081/judge` 后执行 `go run .`
+- Worker：设置 `NLOJ_JUDGE_IMAGE` 后执行 `go run ./cmd/nloj worker`，监听 `127.0.0.1:8081`
+- API：设置 `NLOJ_WORKER_URL=http://127.0.0.1:8081/judge` 后执行 `go run ./cmd/nloj`
 
 ## 语言与题型
 

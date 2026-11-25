@@ -1,4 +1,4 @@
-package main
+package judge
 
 import (
 	"context"
@@ -26,10 +26,10 @@ func TestDockerSandbox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := dockerSandbox{binary: docker, image: image}
+	d := DockerSandbox{Binary: docker, Image: image}
 	p := problem{Type: "STANDARD", Mode: "EXACT", Time: 10000, Memory: 256 << 10, Cases: []testCase{{Input: "10 32\n", Output: "42\n"}}}
 	sub := submission{Language: "PYTHON", Code: "print(sum(map(int,input().split())))"}
-	runs, status := d.run(context.Background(), sub, p)
+	runs, status := d.Run(context.Background(), sub, p)
 	if status != "OK" || exactVerdict(p.Cases, runs).Status != "AC" {
 		t.Fatalf("EXACT: status=%s runs=%+v", status, runs)
 	}
@@ -41,8 +41,8 @@ int main(int argc, char** argv) {
     if (argc != 4 || !(std::ifstream(argv[2]) >> x)) return 1;
     return x == 42 ? 0 : 1;
 }`
-	runs, status = d.run(context.Background(), sub, p)
-	if status != "OK" || caseVerdict(p.Cases, runs, false).Status != "AC" {
+	runs, status = d.Run(context.Background(), sub, p)
+	if status != "OK" || Verdict(p.Cases, runs, false).Status != "AC" {
 		t.Fatalf("SPJ: status=%s runs=%+v", status, runs)
 	}
 
@@ -57,8 +57,8 @@ int main(int argc, char** argv) {
 }`
 	sub = submission{Language: "CPP", Code: `#include <iostream>
 int main() { int x; if (!(std::cin >> x)) return 1; std::cout << x + 1 << std::endl; }`}
-	runs, status = d.run(context.Background(), sub, p)
-	if status != "OK" || caseVerdict(p.Cases, runs, false).Status != "AC" {
+	runs, status = d.Run(context.Background(), sub, p)
+	if status != "OK" || Verdict(p.Cases, runs, false).Status != "AC" {
 		t.Fatalf("INTERACTIVE: status=%s runs=%+v", status, runs)
 	}
 
@@ -73,8 +73,8 @@ int main(int argc, char** argv) {
     return ao >> a && bo >> b && a == 11 && b == 21 ? 0 : 1;
 }`
 	sub.Code = "===NLOJ_FILE:alice===\n" + sub.Code + "\n===NLOJ_FILE:bob===\n" + sub.Code
-	runs, status = d.run(context.Background(), sub, p)
-	if status != "OK" || caseVerdict(p.Cases, runs, false).Status != "AC" {
+	runs, status = d.Run(context.Background(), sub, p)
+	if status != "OK" || Verdict(p.Cases, runs, false).Status != "AC" {
 		t.Fatalf("COMMUNICATION: status=%s runs=%+v", status, runs)
 	}
 }

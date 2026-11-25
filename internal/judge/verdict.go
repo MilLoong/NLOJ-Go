@@ -1,17 +1,17 @@
-package main
+package judge
 
 import (
 	"fmt"
 	"strings"
 )
 
-type caseRun struct {
+type CaseRun struct {
 	Status       string
 	Stdout       string
 	Time, Memory int
 }
 
-func normalizeOutput(s string) string {
+func NormalizeOutput(s string) string {
 	lines := strings.Split(strings.ReplaceAll(s, "\r", ""), "\n")
 	for i := range lines {
 		lines[i] = strings.TrimRight(lines[i], " \t")
@@ -20,10 +20,10 @@ func normalizeOutput(s string) string {
 }
 
 func exactVerdict(cases []testCase, runs []caseRun) result {
-	return caseVerdict(cases, runs, true)
+	return Verdict(cases, runs, true)
 }
 
-func caseVerdict(cases []testCase, runs []caseRun, compare bool) result {
+func Verdict(cases []TestCase, runs []CaseRun, compare bool) Result {
 	if len(cases) == 0 || len(runs) > len(cases) {
 		return result{Status: "SYSTEM_ERROR"}
 	}
@@ -32,7 +32,7 @@ func caseVerdict(cases []testCase, runs []caseRun, compare bool) result {
 		status := run.Status
 		switch status {
 		case "OK":
-			if compare && normalizeOutput(cases[i].Output) != normalizeOutput(run.Stdout) {
+			if compare && NormalizeOutput(cases[i].Output) != NormalizeOutput(run.Stdout) {
 				status = "WA"
 			}
 		case "WA", "TLE", "MLE", "RE":

@@ -1,8 +1,10 @@
-package main
+package app
 
 import (
 	"path/filepath"
 	"testing"
+
+	"nloj-go/internal/judge"
 )
 
 func TestJournalRecovery(t *testing.T) {
@@ -55,11 +57,11 @@ func TestJournalRecovery(t *testing.T) {
 }
 
 func TestSplitCommunication(t *testing.T) {
-	a, b, ok := splitCommunication("===NLOJ_FILE:bob===B\n===NLOJ_FILE:alice===A")
+	a, b, ok := judge.SplitCommunication("===NLOJ_FILE:bob===B\n===NLOJ_FILE:alice===A")
 	if !ok || a != "A" || b != "B\n" {
 		t.Fatalf("unexpected split: %q %q %v", a, b, ok)
 	}
-	if _, _, ok := splitCommunication("===NLOJ_FILE:alice===A"); ok {
+	if _, _, ok := judge.SplitCommunication("===NLOJ_FILE:alice===A"); ok {
 		t.Fatal("accepted missing bob source")
 	}
 }

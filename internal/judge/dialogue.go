@@ -1,4 +1,4 @@
-package main
+package judge
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func splitCommunication(code string) (string, string, bool) {
+func SplitCommunication(code string) (string, string, bool) {
 	const alice = "===NLOJ_FILE:alice==="
 	const bob = "===NLOJ_FILE:bob==="
 	if strings.Count(code, alice) != 1 || strings.Count(code, bob) != 1 {
@@ -27,7 +27,7 @@ func splitCommunication(code string) (string, string, bool) {
 	return p1, p2, ok && strings.TrimSpace(first) == "" && strings.TrimSpace(p1) != "" && strings.TrimSpace(p2) != ""
 }
 
-func (d dockerSandbox) runDialogue(ctx context.Context, sub submission, p problem) ([]caseRun, string) {
+func (d DockerSandbox) runDialogue(ctx context.Context, sub submission, p problem) ([]caseRun, string) {
 	if sub.Language != "C" && sub.Language != "CPP" {
 		return nil, "CE"
 	}
@@ -35,7 +35,7 @@ func (d dockerSandbox) runDialogue(ctx context.Context, sub submission, p proble
 	mode := "interactor"
 	if p.Type == "COMMUNICATION" {
 		var ok bool
-		a, b, ok = splitCommunication(sub.Code)
+		a, b, ok = SplitCommunication(sub.Code)
 		if !ok {
 			return nil, "CE"
 		}
@@ -99,12 +99,12 @@ func (d dockerSandbox) runDialogue(ctx context.Context, sub submission, p proble
 	return runs, "OK"
 }
 
-func (d dockerSandbox) dialogueCase(ctx context.Context, p problem, mode, judge, alice, bob string) caseRun {
+func (d DockerSandbox) dialogueCase(ctx context.Context, p problem, mode, judge, alice, bob string) caseRun {
 	var names []string
 	defer func() {
 		for _, name := range names {
 			cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			exec.CommandContext(cleanup, d.binary, "volume", "rm", name).Run()
+			exec.CommandContext(cleanup, d.Binary, "volume", "rm", name).Run()
 			cancel()
 		}
 	}()
@@ -115,7 +115,7 @@ func (d dockerSandbox) dialogueCase(ctx context.Context, p problem, mode, judge,
 		names = append(names, name)
 		create, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
-		if exec.CommandContext(create, d.binary, "volume", "create", name).Run() != nil {
+		if exec.CommandContext(create, d.Binary, "volume", "create", name).Run() != nil {
 			return ""
 		}
 		return name

@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"bytes"
@@ -14,6 +14,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"nloj-go/internal/judge"
 )
 
 const judgeDeadline = 20 * time.Minute
@@ -62,7 +64,7 @@ func workerHandler(token string, run runner) http.Handler {
 		runs, status := run(ctx, request.Submission, p)
 		for i := range runs {
 			if i < len(p.Cases) && runs[i].Status == "OK" && p.Type == "STANDARD" && p.Mode == "EXACT" &&
-				normalizeOutput(runs[i].Stdout) != normalizeOutput(p.Cases[i].Output) {
+				judge.NormalizeOutput(runs[i].Stdout) != judge.NormalizeOutput(p.Cases[i].Output) {
 				runs[i].Status = "WA"
 			}
 			runs[i].Stdout = ""
@@ -81,7 +83,12 @@ func dockerRunner(image string) (runner, error) {
 	if err != nil {
 		return nil, err
 	}
-	return (dockerSandbox{binary: binary, image: image}).run, nil
+	sandbox := judge.DockerSandbox{Binary: binary, Image: image}
+	return func(ctx context.Context, sub submission, p problem) ([]caseRun, string) {
+		return sandbox.Run(ctx, judge.Submission{Language: sub.Language, Code: sub.Code}, judge.Problem{
+			Type: p.Type, Mode: p.Mode, Extra: p.Extra, Time: p.Time, Memory: p.Memory, Cases: p.Cases,
+		})
+	}, nil
 }
 
 func remoteRunner(endpoint, token string) (runner, error) {

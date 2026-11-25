@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"context"
@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"nloj-go/internal/judge"
 )
 
 func TestAPI(t *testing.T) {
@@ -130,7 +132,7 @@ func TestExactVerdict(t *testing.T) {
 		{"timeout", "TLE", []caseRun{{"TLE", "", 1001, 20}}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			r := exactVerdict(cases, tt.runs)
+			r := judge.Verdict(cases, tt.runs, true)
 			if r.Status != tt.want {
 				t.Fatalf("status=%s, want %s", r.Status, tt.want)
 			}

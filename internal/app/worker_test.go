@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"context"
@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"nloj-go/internal/judge"
 )
 
 func TestWorkerHTTP(t *testing.T) {
@@ -25,7 +27,7 @@ func TestWorkerHTTP(t *testing.T) {
 	}
 	for _, tc := range []struct{ source, want string }{{"42 \r\n", "AC"}, {"41", "WA"}} {
 		runs, status := run(context.Background(), submission{Code: tc.source}, p)
-		if status != "OK" || exactVerdict(p.Cases, runs).Status != tc.want {
+		if status != "OK" || judge.Verdict(p.Cases, runs, true).Status != tc.want {
 			t.Fatalf("source=%q worker=%s runs=%+v want=%s", tc.source, status, runs, tc.want)
 		}
 	}

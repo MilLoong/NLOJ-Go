@@ -1,4 +1,4 @@
-package main
+package judge
 
 import (
 	"bytes"
@@ -44,12 +44,17 @@ var languages = map[string]languageSpec{
 	"GO":     {"main.go", []string{"go", "build", "-o", "program", "main.go"}, []string{"./program"}},
 }
 
-type dockerSandbox struct {
-	binary, image string
+type DockerSandbox struct {
+	Binary, Image string
 }
 
-func (d dockerSandbox) run(ctx context.Context, sub submission, p problem) ([]caseRun, string) {
-	ctx, cancel := context.WithTimeout(ctx, judgeDeadline)
+func SupportsLanguage(language string) bool {
+	_, ok := languages[language]
+	return ok
+}
+
+func (d DockerSandbox) Run(ctx context.Context, sub Submission, p Problem) ([]CaseRun, string) {
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Minute)
 	defer cancel()
 	if p.Type == "INTERACTIVE" || p.Type == "COMMUNICATION" {
 		return d.runDialogue(ctx, sub, p)
@@ -97,14 +102,14 @@ func (d dockerSandbox) run(ctx context.Context, sub submission, p problem) ([]ca
 			r.Status = d.check(ctx, checker, c, r.Stdout)
 		}
 		runs = append(runs, r)
-		if r.Status != "OK" || (checker == "" && normalizeOutput(r.Stdout) != normalizeOutput(c.Output)) {
+		if r.Status != "OK" || (checker == "" && NormalizeOutput(r.Stdout) != NormalizeOutput(c.Output)) {
 			break
 		}
 	}
 	return runs, "OK"
 }
 
-func (d dockerSandbox) check(ctx context.Context, dir string, c testCase, stdout string) string {
+func (d DockerSandbox) check(ctx context.Context, dir string, c testCase, stdout string) string {
 	for name, data := range map[string]string{"in.txt": c.Input, "out.txt": stdout, "ans.txt": c.Output} {
 		if os.WriteFile(filepath.Join(dir, name), []byte(data), 0600) != nil {
 			return "SYSTEM_ERROR"
@@ -120,11 +125,11 @@ func (d dockerSandbox) check(ctx context.Context, dir string, c testCase, stdout
 	return "OK"
 }
 
-func (d dockerSandbox) container(parent context.Context, dir, input string, argv []string, limit time.Duration, memory int, build bool) caseRun {
+func (d DockerSandbox) container(parent context.Context, dir, input string, argv []string, limit time.Duration, memory int, build bool) caseRun {
 	return d.containerWithMounts(parent, dir, input, argv, limit, memory, build, nil)
 }
 
-func (d dockerSandbox) containerWithMounts(parent context.Context, dir, input string, argv []string, limit time.Duration, memory int, build bool, mounts []string) caseRun {
+func (d DockerSandbox) containerWithMounts(parent context.Context, dir, input string, argv []string, limit time.Duration, memory int, build bool, mounts []string) caseRun {
 	var nonce [16]byte
 	rand.Read(nonce[:])
 	name := "nloj-" + hex.EncodeToString(nonce[:])
@@ -142,17 +147,17 @@ func (d dockerSandbox) containerWithMounts(parent context.Context, dir, input st
 	for _, mount := range mounts {
 		args = append(args, "--mount", mount)
 	}
-	args = append(args, "--entrypoint", argv[0], d.image)
+	args = append(args, "--entrypoint", argv[0], d.Image)
 	args = append(args, argv[1:]...)
 	ctx, cancel := context.WithTimeout(parent, limit)
 	defer cancel()
 	started := time.Now()
 	var out limitedOutput
-	cmd := exec.CommandContext(ctx, d.binary, args...)
+	cmd := exec.CommandContext(ctx, d.Binary, args...)
 	defer func() {
 		cleanup, stop := context.WithTimeout(context.Background(), 5*time.Second)
 		defer stop()
-		exec.CommandContext(cleanup, d.binary, "rm", "-f", name).Run()
+		exec.CommandContext(cleanup, d.Binary, "rm", "-f", name).Run()
 	}()
 	cmd.Stdin = strings.NewReader(input)
 	cmd.Stdout = &out
@@ -174,7 +179,7 @@ func (d dockerSandbox) containerWithMounts(parent context.Context, dir, input st
 	var failure *exec.ExitError
 	if errors.As(err, &failure) && failure.ExitCode() == 137 {
 		probe, stop := context.WithTimeout(parent, 5*time.Second)
-		state, inspectErr := exec.CommandContext(probe, d.binary, "inspect", "--format={{.State.OOMKilled}}", name).Output()
+		state, inspectErr := exec.CommandContext(probe, d.Binary, "inspect", "--format={{.State.OOMKilled}}", name).Output()
 		stop()
 		if inspectErr == nil && strings.TrimSpace(string(state)) == "true" {
 			res.Status = "MLE"

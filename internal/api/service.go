@@ -1,8 +1,7 @@
-package app
+package api
 
 import (
 	"context"
-	"crypto/pbkdf2"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -12,53 +11,28 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"nloj-go/internal/common"
 	"nloj-go/internal/judge"
+	problemDomain "nloj-go/internal/problem"
+	"nloj-go/internal/submit"
+	"nloj-go/internal/user"
 )
 
-type account struct {
-	ID      int    `json:"id"`
-	Name    string `json:"username"`
-	Role    string `json:"role"`
-	Created string `json:"createTime"`
-	salt    [16]byte
-	hash    []byte
-}
+type account = user.Account
 
 type testCase = judge.TestCase
 
-type problem struct {
-	ID          int        `json:"id"`
-	Title       string     `json:"title"`
-	Difficulty  string     `json:"difficulty"`
-	Description string     `json:"description,omitempty"`
-	Time        int        `json:"timeLimit"`
-	Memory      int        `json:"memoryLimit"`
-	Visible     int        `json:"visible"`
-	Created     string     `json:"createTime"`
-	Type        string     `json:"problemType"`
-	Mode        string     `json:"judgeMode"`
-	Cases       []testCase `json:"samples,omitempty"`
-	Extra       string     `json:"-"`
-}
+type problem = problemDomain.Problem
 
 type result = judge.Result
 type caseRun = judge.CaseRun
 
-type submission struct {
-	ID       int    `json:"id"`
-	User     int    `json:"userId"`
-	Problem  int    `json:"problemId"`
-	Language string `json:"language"`
-	Code     string `json:"code,omitempty"`
-	Created  string `json:"createTime"`
-	result
-}
+type submission = submit.Submission
 
 type session struct {
 	user    int
@@ -90,18 +64,10 @@ func newService() *service {
 
 func timestamp() string { return time.Now().UTC().Format("2006-01-02T15:04:05") }
 
-func passwordHash(password string, salt [16]byte) []byte {
-	hash, err := pbkdf2.Key(sha256.New, password, salt[:], 600000, 32)
-	if err != nil {
-		panic(err)
-	}
-	return hash
-}
-
 func (s *service) addUser(name, password, role string) int {
 	a := account{Name: name, Role: role, Created: timestamp()}
-	rand.Read(a.salt[:])
-	a.hash = passwordHash(password, a.salt)
+	rand.Read(a.Salt[:])
+	a.Hash = user.PasswordHash(password, a.Salt)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	key := strings.ToLower(name)
@@ -109,7 +75,7 @@ func (s *service) addUser(name, password, role string) int {
 		return 0
 	}
 	a.ID = len(s.users) + 1
-	if err := s.save(journalRecord{User: &diskAccount{a, a.salt, a.hash}}); err != nil {
+	if err := s.save(journalRecord{User: &diskAccount{a, a.Salt, a.Hash}}); err != nil {
 		log.Print(err)
 		return -1
 	}
@@ -153,11 +119,9 @@ func decode(w http.ResponseWriter, r *http.Request, dst any) bool {
 	return d.Decode(dst) == nil && d.Decode(new(any)) == io.EOF
 }
 
-var usernamePattern = regexp.MustCompile("^[A-Za-z0-9_]{3,32}$")
-
 func (s *service) auth(w http.ResponseWriter, r *http.Request) {
 	var p struct{ Username, Password string }
-	if !decode(w, r, &p) || !usernamePattern.MatchString(p.Username) || len(p.Password) < 6 || len(p.Password) > 64 {
+	if !decode(w, r, &p) || !user.ValidCredentials(p.Username, p.Password) {
 		respond(w, 40000, nil)
 		return
 	}
@@ -181,8 +145,8 @@ func (s *service) auth(w http.ResponseWriter, r *http.Request) {
 		a = s.users[id-1]
 	}
 	s.mu.Unlock()
-	hash := passwordHash(p.Password, a.salt)
-	if subtle.ConstantTimeCompare(hash, a.hash) != 1 {
+	hash := user.PasswordHash(p.Password, a.Salt)
+	if subtle.ConstantTimeCompare(hash, a.Hash) != 1 {
 		respond(w, 40100, nil)
 		return
 	}
@@ -213,31 +177,7 @@ func number(r *http.Request, name string, fallback int) int {
 	return n
 }
 
-type page[T any] struct {
-	Num     int `json:"pageNum"`
-	Size    int `json:"pageSize"`
-	Total   int `json:"total"`
-	Records []T `json:"records"`
-}
-
-func paginate[T any](items []T, n, size, cursor int, match func(T) (int, bool)) page[T] {
-	p := page[T]{Num: n, Size: size, Records: make([]T, 0, size)}
-	for i := len(items) - 1; i >= 0; i-- {
-		id, ok := match(items[i])
-		if !ok {
-			continue
-		}
-		rank := p.Total
-		p.Total++
-		if len(p.Records) == size || (cursor > 0 && id >= cursor) || (cursor == 0 && rank/size < n-1) {
-			continue
-		}
-		p.Records = append(p.Records, items[i])
-	}
-	return p
-}
-
-func difficulty(d string) bool { return d == "EASY" || d == "MEDIUM" || d == "HARD" }
+type page[T any] = common.Page[T]
 
 func (s *service) api(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodHead {
@@ -303,21 +243,13 @@ func (s *service) dispatch(r *http.Request, resource string, detail bool, id, n,
 				if id < 1 || id > len(s.problems) || s.problems[id-1].Visible == 0 {
 					return 40400, nil
 				}
-				item := s.problems[id-1]
-				item.Cases = nil
-				for _, c := range s.problems[id-1].Cases {
-					if c.Sample {
-						c.Sample = false
-						item.Cases = append(item.Cases, c)
-					}
-				}
-				return 0, item
+				return 0, s.problems[id-1].PublicDetail()
 			}
 			d, keyword := r.URL.Query().Get("difficulty"), strings.ToLower(r.URL.Query().Get("keyword"))
-			if d != "" && !difficulty(d) {
+			if d != "" && !problemDomain.ValidDifficulty(d) {
 				return 40000, nil
 			}
-			out := paginate(s.problems, n, size, cursor, func(p problem) (int, bool) {
+			out := common.Paginate(s.problems, n, size, cursor, func(p problem) (int, bool) {
 				return p.ID, p.Visible == 1 && (d == "" || d == p.Difficulty) && (keyword == "" || strings.Contains(strings.ToLower(p.Title), keyword))
 			})
 			for i := range out.Records {
@@ -332,24 +264,8 @@ func (s *service) dispatch(r *http.Request, resource string, detail bool, id, n,
 		if a.Role != "admin" {
 			return 40101, nil
 		}
-		if p.Type == "" {
-			p.Type = "STANDARD"
-		}
-		if p.Mode == "" {
-			p.Mode = "EXACT"
-		}
-		validJudge := false
-		switch p.Type {
-		case "STANDARD":
-			validJudge = p.Mode == "EXACT" || (p.Mode == "SPJ" && strings.TrimSpace(p.Extra) != "")
-		case "INTERACTIVE", "COMMUNICATION":
-			validJudge = p.Mode == "EXACT" && strings.TrimSpace(p.Extra) != ""
-		}
-		if !validJudge || strings.TrimSpace(p.Title) == "" || !difficulty(p.Difficulty) || p.Time < 1 || p.Time > 60000 || p.Memory < 1 || p.Memory > 1<<20 || (p.Visible != 0 && p.Visible != 1) {
+		if !p.Prepare() {
 			return 40000, nil
-		}
-		for i := range p.Cases {
-			p.Cases[i].ID = i + 1
 		}
 		if detail {
 			if id < 1 || id > len(s.problems) {
@@ -379,23 +295,15 @@ func (s *service) dispatch(r *http.Request, resource string, detail bool, id, n,
 			return 40100, nil
 		}
 		if r.Method == "POST" {
-			if !judge.SupportsLanguage(sub.Language) {
-				return 40000, nil
-			}
-			if strings.TrimSpace(sub.Code) == "" || sub.Problem < 1 || sub.Problem > len(s.problems) || s.problems[sub.Problem-1].Visible != 1 {
+			if sub.Problem < 1 || sub.Problem > len(s.problems) {
 				return 40000, nil
 			}
 			p := s.problems[sub.Problem-1]
-			if p.Type != "" && p.Type != "STANDARD" && sub.Language != "C" && sub.Language != "CPP" {
+			if !sub.ValidFor(p) {
 				return 40000, nil
 			}
-			if p.Type == "COMMUNICATION" {
-				if _, _, ok := judge.SplitCommunication(sub.Code); !ok {
-					return 40000, nil
-				}
-			}
 			sub.ID, sub.User, sub.Created = len(s.submissions)+1, a.ID, timestamp()
-			sub.result = result{Status: "PENDING"}
+			sub.Result = result{Status: "PENDING"}
 			if len(s.jobs) >= cap(s.jobs) {
 				return 50001, nil
 			}
@@ -412,7 +320,7 @@ func (s *service) dispatch(r *http.Request, resource string, detail bool, id, n,
 				return 40400, nil
 			}
 			item := s.submissions[id-1]
-			if item.User != a.ID && a.Role != "admin" {
+			if !item.CanView(a.ID, a.Role) {
 				return 40101, nil
 			}
 			return 0, item
@@ -421,7 +329,7 @@ func (s *service) dispatch(r *http.Request, resource string, detail bool, id, n,
 		if problemID < 0 {
 			return 40000, nil
 		}
-		out := paginate(s.submissions, n, size, cursor, func(item submission) (int, bool) {
+		out := common.Paginate(s.submissions, n, size, cursor, func(item submission) (int, bool) {
 			return item.ID, item.User == a.ID && (problemID == 0 || problemID == item.Problem) && (status == "" || status == item.Status)
 		})
 		for i := range out.Records {
@@ -461,7 +369,7 @@ func (s *service) work(ctx context.Context, run runner) {
 				s.mu.Unlock()
 				return
 			}
-			s.submissions[j.submission.ID-1].result = res
+			s.submissions[j.submission.ID-1].Result = res
 			s.mu.Unlock()
 		}
 	}

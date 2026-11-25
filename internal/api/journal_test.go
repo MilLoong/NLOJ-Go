@@ -1,4 +1,4 @@
-package app
+package api
 
 import (
 	"path/filepath"
@@ -44,7 +44,7 @@ func TestJournalRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer recovered.disk.file.Close()
-	if len(recovered.users) != 1 || len(recovered.users[0].hash) != 32 ||
+	if len(recovered.users) != 1 || len(recovered.users[0].Hash) != 32 ||
 		len(recovered.submissions) != 2 || recovered.submissions[0].Status != "AC" ||
 		recovered.submissions[1].Status != "PENDING" || len(recovered.jobs) != 1 ||
 		recovered.problems[0].Title != "updated" {

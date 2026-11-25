@@ -1,4 +1,4 @@
-package app
+package api
 
 import (
 	"bytes"
@@ -96,7 +96,7 @@ func loadService(path string) (*service, error) {
 		switch {
 		case r.User != nil && r.User.ID == len(s.users)+1:
 			a := r.User.account
-			a.salt, a.hash = r.User.Salt, r.User.Hash
+			a.Salt, a.Hash = r.User.Salt, r.User.Hash
 			s.users = append(s.users, a)
 			s.names[strings.ToLower(a.Name)] = a.ID
 		case r.Problem != nil && r.Problem.ID > 0 && r.Problem.ID <= len(s.problems)+1:
@@ -111,11 +111,11 @@ func loadService(path string) (*service, error) {
 			p := r.JudgeProblem.problem
 			p.Extra = r.JudgeProblem.ExtraCode
 			sub := *r.Submit
-			sub.result = result{Status: "PENDING"}
+			sub.Result = result{Status: "PENDING"}
 			s.submissions = append(s.submissions, sub)
 			pending[sub.ID] = job{sub, p}
 		case r.Finish != nil && pending[r.ID].submission.ID != 0:
-			s.submissions[r.ID-1].result = *r.Finish
+			s.submissions[r.ID-1].Result = *r.Finish
 			delete(pending, r.ID)
 		default:
 			return nil, errors.New("unexpected journal record")

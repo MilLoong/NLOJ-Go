@@ -1,7 +1,7 @@
 package main
 
-import "nloj-go/internal/app"
+import "nloj-go/internal/api"
 
 func main() {
-	app.Run()
+	api.Run()
 }

@@ -7,7 +7,11 @@ NLOJ 的 Go 版本。在线判题后端：用户鉴权、题目管理、提交�
 | 模块 | 职责 |
 |------|------|
 | `cmd/nloj` | API 与独立 Worker 的启动入口 |
-| `internal/app` | 用户、题目、提交 API，追加日志、队列和 Worker 通信 |
+| `internal/api` | HTTP 路由、追加日志、任务队列与 Worker 通信 |
+| `internal/common` | 通用分页 |
+| `internal/user` | 用户模型、凭证校验、PBKDF2 |
+| `internal/problem` | 题目模型、题型规则、公开样例 |
+| `internal/submit` | 提交模型、提交校验、查看权限 |
 | `internal/judge` | 容器隔离、输出比对、SPJ、交互与通信 |
 | `cmd/fifo` | Linux 容器内的 FIFO 协调程序 |
 

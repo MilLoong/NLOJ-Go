@@ -37,6 +37,9 @@ type journal struct {
 
 // Call under the service lock, before publishing an in-memory change.
 func (s *service) save(record journalRecord) error {
+	if s.backends != nil && s.backends.db != nil {
+		return s.backends.append(record)
+	}
 	if s.disk == nil {
 		return nil
 	}
@@ -84,7 +87,7 @@ func loadService(path string) (*service, error) {
 			return nil, err
 		}
 	}
-	pending := make(map[int]job)
+	var records []journalRecord
 	for _, line := range bytes.Split(data[:end], []byte{'\n'}) {
 		if len(line) == 0 {
 			continue
@@ -93,6 +96,22 @@ func loadService(path string) (*service, error) {
 		if err := json.Unmarshal(line, &r); err != nil {
 			return nil, fmt.Errorf("decode journal: %w", err)
 		}
+		records = append(records, r)
+	}
+	if err := s.replay(records); err != nil {
+		return nil, err
+	}
+	if _, err := file.Seek(int64(end), io.SeekStart); err != nil {
+		return nil, err
+	}
+	s.disk = &journal{file: file}
+	ok = true
+	return s, nil
+}
+
+func (s *service) replay(records []journalRecord) error {
+	pending := make(map[int]job)
+	for _, r := range records {
 		switch {
 		case r.User != nil && r.User.ID == len(s.users)+1:
 			a := r.User.account
@@ -118,11 +137,8 @@ func loadService(path string) (*service, error) {
 			s.submissions[r.ID-1].Result = *r.Finish
 			delete(pending, r.ID)
 		default:
-			return nil, errors.New("unexpected journal record")
+			return errors.New("unexpected journal record")
 		}
-	}
-	if _, err := file.Seek(int64(end), io.SeekStart); err != nil {
-		return nil, err
 	}
 	if len(pending) > cap(s.jobs) {
 		s.jobs = make(chan job, len(pending))
@@ -132,7 +148,5 @@ func loadService(path string) (*service, error) {
 			s.jobs <- j
 		}
 	}
-	s.disk = &journal{file: file}
-	ok = true
-	return s, nil
+	return nil
 }

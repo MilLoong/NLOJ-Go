@@ -16,6 +16,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"nloj-go/internal/common"
 	"nloj-go/internal/judge"
 	problemDomain "nloj-go/internal/problem"
@@ -51,6 +53,7 @@ type service struct {
 	submissions []submission
 	jobs        chan job
 	disk        *journal
+	backends    *backends
 }
 
 type job struct {
@@ -225,6 +228,9 @@ func (s *service) dispatch(r *http.Request, resource string, detail bool, id, n,
 	switch resource {
 	case "health":
 		storage := "memory"
+		if s.backends != nil && s.backends.db != nil {
+			storage = "mysql"
+		}
 		if s.disk != nil {
 			storage = "journal"
 			if s.disk.failed != nil {
@@ -243,7 +249,7 @@ func (s *service) dispatch(r *http.Request, resource string, detail bool, id, n,
 				if id < 1 || id > len(s.problems) || s.problems[id-1].Visible == 0 {
 					return 40400, nil
 				}
-				return 0, s.problems[id-1].PublicDetail()
+				return 0, s.publicProblem(id)
 			}
 			d, keyword := r.URL.Query().Get("difficulty"), strings.ToLower(r.URL.Query().Get("keyword"))
 			if d != "" && !problemDomain.ValidDifficulty(d) {
@@ -281,6 +287,9 @@ func (s *service) dispatch(r *http.Request, resource string, detail bool, id, n,
 				return 50000, nil
 			}
 			s.problems[id-1] = p
+			if s.backends != nil && s.backends.cache != nil {
+				s.backends.cacheVersion[id]++
+			}
 			return 0, nil
 		}
 		p.ID, p.Created = len(s.problems)+1, timestamp()
@@ -376,27 +385,52 @@ func (s *service) work(ctx context.Context, run runner) {
 }
 
 func (s *service) handler() http.Handler {
-	mux := http.NewServeMux()
+	mux := gin.New()
+	api := mux.Group("/api/v1")
 	for _, route := range []string{"POST /auth/register", "POST /auth/login"} {
 		method, path, _ := strings.Cut(route, " ")
-		mux.HandleFunc(method+" /api/v1"+path, s.auth)
+		api.Handle(method, path, gin.WrapF(s.auth))
 	}
 	for _, route := range []string{"GET /health", "GET /users/me", "GET /problems", "GET /problems/{id}", "POST /problems", "PUT /problems/{id}", "GET /submissions", "GET /submissions/{id}", "POST /submissions"} {
 		method, path, _ := strings.Cut(route, " ")
-		mux.HandleFunc(method+" /api/v1"+path, s.api)
+		path = strings.ReplaceAll(path, "{id}", ":id")
+		api.Handle(method, path, gin.WrapF(s.api))
+		if method == http.MethodGet {
+			api.HEAD(path, gin.WrapF(s.api))
+		}
 	}
 	return mux
 }
 
 func Run() {
+	gin.SetMode(gin.ReleaseMode)
+	dsn, brokerURL := os.Getenv("NLOJ_MYSQL_DSN"), os.Getenv("NLOJ_RABBITMQ_URL")
+	queue := os.Getenv("NLOJ_RABBITMQ_QUEUE")
+	if queue == "" {
+		queue = "nloj-go.judge"
+	}
+	if brokerURL != "" && dsn == "" {
+		log.Fatal("NLOJ_RABBITMQ_URL requires NLOJ_MYSQL_DSN")
+	}
 	if len(os.Args) == 2 && os.Args[1] == "worker" {
-		token := os.Getenv("NLOJ_WORKER_TOKEN")
-		if len(token) < 32 {
-			log.Fatal("NLOJ_WORKER_TOKEN must be at least 32 bytes")
-		}
 		run, err := dockerRunner(os.Getenv("NLOJ_JUDGE_IMAGE"))
 		if err != nil {
 			log.Fatal(err)
+		}
+		if brokerURL != "" {
+			db, err := openMySQL(dsn)
+			if err != nil {
+				log.Fatal(err)
+			}
+			b := broker{brokerURL, queue, db}
+			for {
+				log.Printf("judge consumer: %v", b.consume(context.Background(), run))
+				time.Sleep(3 * time.Second)
+			}
+		}
+		token := os.Getenv("NLOJ_WORKER_TOKEN")
+		if len(token) < 32 {
+			log.Fatal("NLOJ_WORKER_TOKEN must be at least 32 bytes")
 		}
 		server := http.Server{Addr: "127.0.0.1:8081", Handler: workerHandler(token, run), ReadTimeout: 10 * time.Second, WriteTimeout: judgeDeadline + time.Minute, IdleTimeout: 30 * time.Second}
 		log.Fatal(server.ListenAndServe())
@@ -407,9 +441,20 @@ func Run() {
 	} else if path == "-" {
 		path = ""
 	}
-	s, err := loadService(path)
+	var s *service
+	var err error
+	if dsn != "" {
+		s, err = mysqlService(dsn)
+	} else {
+		s, err = loadService(path)
+	}
 	if err != nil {
 		log.Fatal(err)
+	}
+	if redisURL := os.Getenv("NLOJ_REDIS_URL"); redisURL != "" {
+		if err := s.enableCache(redisURL); err != nil {
+			log.Fatal(err)
+		}
 	}
 	if password := os.Getenv("NLOJ_ADMIN_PASSWORD"); password != "" {
 		if len(password) < 12 || len(password) > 64 {
@@ -420,7 +465,9 @@ func Run() {
 		}
 	}
 	var run runner
-	if endpoint := os.Getenv("NLOJ_WORKER_URL"); endpoint != "" {
+	if brokerURL != "" {
+		run = (broker{brokerURL, queue, s.backends.db}).run
+	} else if endpoint := os.Getenv("NLOJ_WORKER_URL"); endpoint != "" {
 		run, err = remoteRunner(endpoint, os.Getenv("NLOJ_WORKER_TOKEN"))
 	} else if image := os.Getenv("NLOJ_JUDGE_IMAGE"); image != "" {
 		run, err = dockerRunner(image)

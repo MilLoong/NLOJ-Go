@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"nloj-go/internal/judge"
 )
 
@@ -31,10 +33,10 @@ type workerResponse struct {
 }
 
 func workerHandler(token string, run runner) http.Handler {
-	mux := http.NewServeMux()
+	mux := gin.New()
 	slot := make(chan struct{}, 1)
 	want := sha256.Sum256([]byte("Bearer " + token))
-	mux.HandleFunc("POST /judge", func(w http.ResponseWriter, r *http.Request) {
+	mux.POST("/judge", gin.WrapF(func(w http.ResponseWriter, r *http.Request) {
 		got := sha256.Sum256([]byte(r.Header.Get("Authorization")))
 		if subtle.ConstantTimeCompare(want[:], got[:]) != 1 {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -59,20 +61,27 @@ func workerHandler(token string, run runner) http.Handler {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), judgeDeadline)
-		defer cancel()
-		runs, status := run(ctx, request.Submission, p)
-		for i := range runs {
-			if i < len(p.Cases) && runs[i].Status == "OK" && p.Type == "STANDARD" && p.Mode == "EXACT" &&
-				judge.NormalizeOutput(runs[i].Stdout) != judge.NormalizeOutput(p.Cases[i].Output) {
-				runs[i].Status = "WA"
-			}
-			runs[i].Stdout = ""
-		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(workerResponse{status, runs})
-	})
+		json.NewEncoder(w).Encode(executeRequest(r.Context(), run, request.Submission, p))
+	}))
 	return mux
+}
+
+func executeRequest(parent context.Context, run runner, sub submission, p problem) workerResponse {
+	if p.Time < 1 || p.Time > 60000 || p.Memory < 1 || p.Memory > 1<<20 || len(p.Cases) == 0 {
+		return workerResponse{Status: "SYSTEM_ERROR"}
+	}
+	ctx, cancel := context.WithTimeout(parent, judgeDeadline)
+	defer cancel()
+	runs, status := run(ctx, sub, p)
+	for i := range runs {
+		if i < len(p.Cases) && runs[i].Status == "OK" && p.Type == "STANDARD" && p.Mode == "EXACT" &&
+			judge.NormalizeOutput(runs[i].Stdout) != judge.NormalizeOutput(p.Cases[i].Output) {
+			runs[i].Status = "WA"
+		}
+		runs[i].Stdout = ""
+	}
+	return workerResponse{status, runs}
 }
 
 func dockerRunner(image string) (runner, error) {

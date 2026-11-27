@@ -36,36 +36,16 @@ func mysqlService(dsn string) (*service, error) {
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	for _, ddl := range []string{
-		"CREATE TABLE IF NOT EXISTS nloj_go_events (seq BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, payload JSON NOT NULL)",
-		"CREATE TABLE IF NOT EXISTS nloj_go_judge_results (job_key CHAR(64) NOT NULL PRIMARY KEY, payload JSON NOT NULL)",
-	} {
+	for _, ddl := range schema {
 		if _, err := db.ExecContext(ctx, ddl); err != nil {
 			return nil, err
 		}
 	}
-	rows, err := db.QueryContext(ctx, "SELECT payload FROM nloj_go_events ORDER BY seq")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var records []journalRecord
-	for rows.Next() {
-		var payload []byte
-		var record journalRecord
-		if err := rows.Scan(&payload); err != nil {
-			return nil, err
-		}
-		if err := json.Unmarshal(payload, &record); err != nil {
-			return nil, err
-		}
-		records = append(records, record)
-	}
-	if err := rows.Err(); err != nil {
+	if err := migrateLegacy(db); err != nil {
 		return nil, err
 	}
 	s := newService()
-	if err := s.replay(records); err != nil {
+	if err := s.loadTables(db); err != nil {
 		return nil, err
 	}
 	s.backends = &backends{db: db}
@@ -74,14 +54,17 @@ func mysqlService(dsn string) (*service, error) {
 }
 
 func (b *backends) append(record journalRecord) error {
-	payload, err := json.Marshal(record)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	tx, err := b.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	_, err = b.db.ExecContext(ctx, "INSERT INTO nloj_go_events (payload) VALUES (?)", payload)
-	return err
+	defer tx.Rollback()
+	if err := writeRow(ctx, tx, record); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *service) enableCache(rawURL string) error {

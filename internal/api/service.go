@@ -255,6 +255,9 @@ func (s *service) dispatch(r *http.Request, resource string, detail bool, id, n,
 			if d != "" && !problemDomain.ValidDifficulty(d) {
 				return 40000, nil
 			}
+			if s.backends != nil && s.backends.db != nil {
+				return s.backends.problemPage(r.Context(), d, keyword, n, size, cursor)
+			}
 			out := common.Paginate(s.problems, n, size, cursor, func(p problem) (int, bool) {
 				return p.ID, p.Visible == 1 && (d == "" || d == p.Difficulty) && (keyword == "" || strings.Contains(strings.ToLower(p.Title), keyword))
 			})
@@ -320,8 +323,11 @@ func (s *service) dispatch(r *http.Request, resource string, detail bool, id, n,
 				log.Print(err)
 				return 50000, nil
 			}
-			s.submissions = append(s.submissions, sub)
 			s.jobs <- job{sub, p}
+			if s.backends != nil && s.backends.db != nil {
+				sub.Code = ""
+			}
+			s.submissions = append(s.submissions, sub)
 			return 0, map[string]int{"submissionId": sub.ID}
 		}
 		if detail {
@@ -332,11 +338,19 @@ func (s *service) dispatch(r *http.Request, resource string, detail bool, id, n,
 			if !item.CanView(a.ID, a.Role) {
 				return 40101, nil
 			}
+			if s.backends != nil && s.backends.db != nil {
+				if err := s.backends.db.QueryRowContext(r.Context(), "SELECT source_code FROM nloj_go_submission WHERE id=?", id).Scan(&item.Code); err != nil {
+					return 50000, nil
+				}
+			}
 			return 0, item
 		}
 		problemID, status := number(r, "problemId", 0), r.URL.Query().Get("status")
 		if problemID < 0 {
 			return 40000, nil
+		}
+		if s.backends != nil && s.backends.db != nil {
+			return s.backends.submissionPage(r.Context(), a.ID, problemID, status, n, size, cursor)
 		}
 		out := common.Paginate(s.submissions, n, size, cursor, func(item submission) (int, bool) {
 			return item.ID, item.User == a.ID && (problemID == 0 || problemID == item.Problem) && (status == "" || status == item.Status)
@@ -356,6 +370,13 @@ func (s *service) work(ctx context.Context, run runner) {
 			return
 		case j := <-s.jobs:
 			s.mu.Lock()
+			if s.backends != nil && s.backends.db != nil {
+				if _, err := s.backends.db.ExecContext(ctx, "UPDATE nloj_go_submission SET status='JUDGING' WHERE id=?", j.submission.ID); err != nil {
+					s.mu.Unlock()
+					log.Print(err)
+					return
+				}
+			}
 			s.submissions[j.submission.ID-1].Status = "JUDGING"
 			s.mu.Unlock()
 			res := result{Status: "SYSTEM_ERROR"}

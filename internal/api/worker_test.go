@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"nloj-go/internal/judge"
+	"github.com/MilLoong/Nailong-OJ-Go/internal/judge"
 )
 
 func TestWorkerHTTP(t *testing.T) {

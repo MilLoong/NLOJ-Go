@@ -1,4 +1,4 @@
-module nloj-go
+module github.com/MilLoong/Nailong-OJ-Go
 
 go 1.24.0
 

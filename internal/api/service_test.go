@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"nloj-go/internal/judge"
+	"github.com/MilLoong/Nailong-OJ-Go/internal/judge"
 )
 
 func TestAPI(t *testing.T) {

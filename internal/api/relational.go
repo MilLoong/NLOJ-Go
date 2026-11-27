@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"nloj-go/internal/common"
+	"github.com/MilLoong/Nailong-OJ-Go/internal/common"
 )
 
 var schema = []string{

@@ -17,7 +17,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"nloj-go/internal/judge"
+	"github.com/MilLoong/Nailong-OJ-Go/internal/judge"
 )
 
 const judgeDeadline = 20 * time.Minute

@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"nloj-go/internal/judge"
+	"github.com/MilLoong/Nailong-OJ-Go/internal/judge"
 )
 
 func TestJournalRecovery(t *testing.T) {

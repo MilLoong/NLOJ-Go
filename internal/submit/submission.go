@@ -1,8 +1,8 @@
 package submit
 
 import (
-	"nloj-go/internal/judge"
-	"nloj-go/internal/problem"
+	"github.com/MilLoong/Nailong-OJ-Go/internal/judge"
+	"github.com/MilLoong/Nailong-OJ-Go/internal/problem"
 	"strings"
 )
 

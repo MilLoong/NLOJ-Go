@@ -18,11 +18,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"nloj-go/internal/common"
-	"nloj-go/internal/judge"
-	problemDomain "nloj-go/internal/problem"
-	"nloj-go/internal/submit"
-	"nloj-go/internal/user"
+	"github.com/MilLoong/Nailong-OJ-Go/internal/common"
+	"github.com/MilLoong/Nailong-OJ-Go/internal/judge"
+	problemDomain "github.com/MilLoong/Nailong-OJ-Go/internal/problem"
+	"github.com/MilLoong/Nailong-OJ-Go/internal/submit"
+	"github.com/MilLoong/Nailong-OJ-Go/internal/user"
 )
 
 type account = user.Account

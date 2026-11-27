@@ -1,6 +1,6 @@
 package main
 
-import "nloj-go/internal/api"
+import "github.com/MilLoong/Nailong-OJ-Go/internal/api"
 
 func main() {
 	api.Run()

@@ -1,8 +1,8 @@
-# NLOJ-Go
+# Nailong-OJ-Go
 
-NLOJ 的 Go 版本。在线判题后端：用户鉴权、题目管理、提交评测。提交持久化后异步判题，用户代码在 Docker 沙箱里编译运行。
+Nailong-OJ 的 Go 版本。在线判题后端：用户鉴权、题目管理、提交评测。提交持久化后异步判题，用户代码在 Docker 沙箱里编译运行。
 
-## 模块
+## 模块 🧩
 
 | 模块 | 职责 |
 |------|------|
@@ -15,7 +15,7 @@ NLOJ 的 Go 版本。在线判题后端：用户鉴权、题目管理、提交�
 | `internal/judge` | 容器隔离、输出比对、SPJ、交互与通信 |
 | `cmd/fifo` | Linux 容器内的 FIFO 协调程序 |
 
-## 依赖
+## 依赖 📦
 
 Go 1.24 或更高版本，项目通过 `go.mod` 管理，HTTP 路由使用 Gin。实际判题需要可用的 Docker Linux 引擎：
 
@@ -36,7 +36,7 @@ MySQL 模式使用 GORM 写入用户、题目、用例和提交，表名分别�
 
 升级旧 Go 版时，先停止旧 API、备份数据库，再启动新版本。首次启动会在事务内迁移旧事件表，保留原表不再写入。仅支持单 API 写入方，不自动导入 C++ 版数据库。
 
-## 构建
+## 构建 🔧
 
 ```powershell
 go build ./...
@@ -62,7 +62,7 @@ go run ./cmd/nloj
 - Worker：设置 `NLOJ_JUDGE_IMAGE` 后执行 `go run ./cmd/nloj worker`，监听 `127.0.0.1:8081`
 - API：设置 `NLOJ_WORKER_URL=http://127.0.0.1:8081/judge` 后执行 `go run ./cmd/nloj`
 
-## 语言与题型
+## 语言与题型 💻
 
 - 语言：`CPP` / `C` / `PYTHON` / `JAVA` / `GO`
 - 题型：`STANDARD` / `INTERACTIVE` / `COMMUNICATION`
@@ -72,7 +72,28 @@ go run ./cmd/nloj
 
 判题容器禁用网络。当前计时包含容器启动开销，不提供峰值内存。
 
-## 与 C++ 版对比
+## 架构 🏗️
+
+以下为 MySQL + RabbitMQ 部署模式。API 接收提交后返回提交 ID，客户端按 ID 查询判题状态，不必等待沙箱执行结束。
+
+```mermaid
+flowchart LR
+    client["客户端"] -->|"提交代码 / 查询状态"| api["Gin API"]
+    api <-->|"公开题目详情"| redis[("Redis")]
+    api -->|"保存提交和题目快照"| db[("MySQL")]
+    api -->|"入队"| queue["进程内待判队列"]
+    queue --> dispatch["API 调度器"]
+    dispatch -->|"发布持久消息"| mq[["RabbitMQ"]]
+    mq -->|"投递任务"| worker["独立 Go Worker"]
+    worker <-->|"编译、运行、收集用例结果"| sandbox["Docker 沙箱"]
+    worker -->|"写入执行结果"| db
+    worker -.->|"落库后 ACK"| mq
+    dispatch <-->|"读取执行结果 / 写回提交终态"| db
+```
+
+未配置 RabbitMQ 时，调度器也可调用进程内判题器或 HTTP Worker。Redis 只缓存公开题面和样例，不存隐藏用例或 checker 源码。
+
+## 与 C++ 版对比 📊
 
 | 项目 | C++ 版 | Go 版 |
 |------|--------|-------|
@@ -84,6 +105,6 @@ go run ./cmd/nloj
 
 同机、同题、同一 MySQL 和 Redis；预热后以 8 并发各跑 3 轮，每轮 5 秒。只比较题目详情接口，不代表语言本身的性能差距。
 
-## License
+## License 📄
 
 MIT

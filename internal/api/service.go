@@ -339,9 +339,11 @@ func (s *service) dispatch(r *http.Request, resource string, detail bool, id, n,
 				return 40101, nil
 			}
 			if s.backends != nil && s.backends.db != nil {
-				if err := s.backends.db.QueryRowContext(r.Context(), "SELECT source_code FROM nloj_go_submission WHERE id=?", id).Scan(&item.Code); err != nil {
+				var row submissionRow
+				if err := s.backends.orm.WithContext(r.Context()).Select("source_code").Take(&row, id).Error; err != nil {
 					return 50000, nil
 				}
+				item.Code = row.SourceCode
 			}
 			return 0, item
 		}
@@ -371,7 +373,7 @@ func (s *service) work(ctx context.Context, run runner) {
 		case j := <-s.jobs:
 			s.mu.Lock()
 			if s.backends != nil && s.backends.db != nil {
-				if _, err := s.backends.db.ExecContext(ctx, "UPDATE nloj_go_submission SET status='JUDGING' WHERE id=?", j.submission.ID); err != nil {
+				if err := s.backends.orm.WithContext(ctx).Model(&submissionRow{}).Where("id = ?", j.submission.ID).Update("status", "JUDGING").Error; err != nil {
 					s.mu.Unlock()
 					log.Print(err)
 					return

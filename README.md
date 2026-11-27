@@ -32,7 +32,7 @@ docker build -t nloj-judge:local -f deploy/judge.Dockerfile .
 | `NLOJ_RABBITMQ_URL` | RabbitMQ URL，例如 `amqp://guest:guest@127.0.0.1:5672/`；启用时要求 MySQL |
 | `NLOJ_RABBITMQ_QUEUE` | 持久队列名称，默认 `nloj-go.judge`；每组 API / Worker 使用相同值，不与其他实例共用 |
 
-MySQL 模式按用户、题目、用例和提交分别落库：`nloj_go_user`、`nloj_go_problem`、`nloj_go_problem_case`、`nloj_go_submission`。用例关联题目，提交关联用户和题目；提交时保存题目快照，Worker 结果单独去重。题目和提交列表直接用 SQL 分页。
+MySQL 模式使用 GORM 写入用户、题目、用例和提交，表名分别为 `nloj_go_user`、`nloj_go_problem`、`nloj_go_problem_case`、`nloj_go_submission`。题目和用例在同一事务更新，提交保留题目快照。建表、历史迁移、列表分页和 Worker 结果去重仍使用显式 SQL，不启用 AutoMigrate。
 
 升级旧 Go 版时，先停止旧 API、备份数据库，再启动新版本。首次启动会在事务内迁移旧事件表，保留原表不再写入。仅支持单 API 写入方，不自动导入 C++ 版数据库。
 

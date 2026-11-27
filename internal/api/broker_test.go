@@ -30,6 +30,12 @@ func TestMySQLRabbitMQRoundTrip(t *testing.T) {
 	if err := s.save(journalRecord{Problem: &diskProblem{p, ""}}); err != nil {
 		t.Fatal(err)
 	}
+	invalid := p
+	invalid.Title = "must roll back"
+	invalid.Cases = []testCase{{ID: 1}, {ID: 1}}
+	if err := s.save(journalRecord{Problem: &diskProblem{invalid, ""}}); err == nil {
+		t.Fatal("accepted duplicate case numbers")
+	}
 	if err := s.save(journalRecord{Submit: &sub, JudgeProblem: &diskProblem{p, ""}}); err != nil {
 		t.Fatal(err)
 	}
@@ -38,6 +44,10 @@ func TestMySQLRabbitMQRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer restarted.backends.db.Close()
+	if len(restarted.problems) != 1 || restarted.problems[0].Title != p.Title ||
+		len(restarted.problems[0].Cases) != 1 || restarted.problems[0].Cases[0].Output != "42" {
+		t.Fatal("failed case update did not roll back the problem and its original cases")
+	}
 	if len(restarted.jobs) != 1 || restarted.submissions[0].Status != "PENDING" {
 		t.Fatal("pending submission not restored from MySQL")
 	}

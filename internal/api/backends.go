@@ -12,10 +12,14 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/redis/go-redis/v9"
+	gormmysql "gorm.io/driver/mysql"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 type backends struct {
 	db           *sql.DB
+	orm          *gorm.DB
 	cache        *redis.Client
 	cachePrefix  string
 	cacheVersion map[int]uint64
@@ -48,7 +52,11 @@ func mysqlService(dsn string) (*service, error) {
 	if err := s.loadTables(db); err != nil {
 		return nil, err
 	}
-	s.backends = &backends{db: db}
+	orm, err := gorm.Open(gormmysql.New(gormmysql.Config{Conn: db}), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		return nil, err
+	}
+	s.backends = &backends{db: db, orm: orm}
 	ok = true
 	return s, nil
 }
@@ -56,15 +64,7 @@ func mysqlService(dsn string) (*service, error) {
 func (b *backends) append(record journalRecord) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	tx, err := b.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if err := writeRow(ctx, tx, record); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return b.orm.WithContext(ctx).Transaction(func(tx *gorm.DB) error { return persist(tx, record) })
 }
 
 func (s *service) enableCache(rawURL string) error {

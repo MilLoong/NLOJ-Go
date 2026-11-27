@@ -107,7 +107,8 @@ func (b *backends) submissionPage(ctx context.Context, uid, pid int, status stri
 	})
 }
 
-func writeRow(ctx context.Context, tx *sql.Tx, r journalRecord) error {
+// Kept independent of the current ORM models for the version-1 migration.
+func writeLegacyRow(ctx context.Context, tx *sql.Tx, r journalRecord) error {
 	exec := func(q string, args ...any) error { _, err := tx.ExecContext(ctx, q, args...); return err }
 	switch {
 	case r.User != nil:
@@ -182,7 +183,7 @@ func migrateLegacy(db *sql.DB) error {
 			if err := json.Unmarshal(raw, &rec); err != nil {
 				return fmt.Errorf("legacy event %d: %w", seq, err)
 			}
-			if err := writeRow(ctx, tx, rec); err != nil {
+			if err := writeLegacyRow(ctx, tx, rec); err != nil {
 				return fmt.Errorf("legacy event %d: %w", seq, err)
 			}
 		}

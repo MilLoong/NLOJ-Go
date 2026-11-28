@@ -37,4 +37,8 @@ func TestRedisPublicProblem(t *testing.T) {
 	if fresh := s.publicProblem(1); fresh.Title != "updated" {
 		t.Fatalf("read stale data after invalidation: %q", fresh.Title)
 	}
+	b := s.backends
+	if b.cacheHits != 1 || b.cacheMisses != 2 || b.cacheErrors != 0 {
+		t.Fatalf("cache counters: hits=%d misses=%d errors=%d", b.cacheHits, b.cacheMisses, b.cacheErrors)
+	}
 }

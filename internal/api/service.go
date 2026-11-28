@@ -237,7 +237,11 @@ func (s *service) dispatch(r *http.Request, resource string, detail bool, id, n,
 				return 50000, nil
 			}
 		}
-		return 0, map[string]any{"status": "UP", "storage": storage, "judgeQueueDepth": len(s.jobs)}
+		data := map[string]any{"status": "UP", "storage": storage, "judgeQueueDepth": len(s.jobs)}
+		if b := s.backends; b != nil && b.cache != nil {
+			data["problemCache"] = map[string]uint64{"hits": b.cacheHits, "misses": b.cacheMisses, "errors": b.cacheErrors}
+		}
+		return 0, data
 	case "users":
 		if a.ID == 0 {
 			return 40100, nil

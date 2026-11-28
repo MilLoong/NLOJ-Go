@@ -18,11 +18,12 @@ import (
 )
 
 type backends struct {
-	db           *sql.DB
-	orm          *gorm.DB
-	cache        *redis.Client
-	cachePrefix  string
-	cacheVersion map[int]uint64
+	db                                  *sql.DB
+	orm                                 *gorm.DB
+	cache                               *redis.Client
+	cachePrefix                         string
+	cacheVersion                        map[int]uint64
+	cacheHits, cacheMisses, cacheErrors uint64
 }
 
 func openMySQL(dsn string) (*sql.DB, error) { return sql.Open("mysql", dsn) }
@@ -97,7 +98,13 @@ func (s *service) publicProblem(id int) problem {
 	var cached problem
 	raw, err := b.cache.Get(ctx, key).Bytes()
 	if err == nil && json.Unmarshal(raw, &cached) == nil {
+		b.cacheHits++
 		return cached
+	}
+	if err == redis.Nil {
+		b.cacheMisses++
+	} else {
+		b.cacheErrors++
 	}
 	p = p.PublicDetail()
 	if data, err := json.Marshal(p); err == nil {
